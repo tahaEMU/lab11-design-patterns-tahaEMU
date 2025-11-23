@@ -202,3 +202,89 @@ docker-compose up -d
 
 Follow the [API Spec](https://microsoft.github.io/presidio/api-docs/api-docs.html#tag/Anonymizer) for the
 Anonymizer REST API reference details
+
+
+## Lab 11 – Debugging the Factory & Strategy Flow
+
+As part of Section 3 of the lab, I debugged `sample.py` using the Poetry interpreter and set a breakpoint in the operators factory.
+
+### Call stack and breakpoint
+
+- I set a breakpoint on this line in `presidio_anonymizer/operators/operators_factory.py`:
+
+  ```python
+  operator = operators_by_type.get(operator_name)
+When I ran sample.py with the "initial" operator, the debugger stopped there.
+
+The call stack (shown in call-stack.png in the repo root) shows the flow going through:
+
+sample.py → run_anonymizer
+
+presidio_anonymizer/anonymizer_engine.py
+
+presidio_anonymizer/core/engine_base.py
+
+presidio_anonymizer/operators/operators_factory.py:create_operator_class
+
+How many if/elif branches are used?
+
+The factory does not use a long if/elif chain to pick individual operators.
+
+There are only a couple of simple if checks for:
+
+validating the OperatorType
+
+reporting an error if the operator name is missing.
+
+The actual selection of the operator is done in a single dictionary lookup on this line:
+
+operator = operators_by_type.get(operator_name)
+
+Data structure used to select operators
+
+The factory uses a Python dict to map operator names to their classes.
+
+Conceptually, the mapping looks like:
+
+{
+    "hash": Hash,
+    "mask": Mask,
+    "redact": Redact,
+    "replace": Replace,
+    "keep": Keep,
+    "encrypt": Encrypt,
+    "custom": Custom,
+    "initial": Initial,
+    # (and optionally "surrogate_ahds" if AHDS is available)
+}
+
+
+operators_by_type is one of these dictionaries, depending on whether the type is OperatorType.Anonymize or OperatorType.Deanonymize.
+
+How this demonstrates the Strategy pattern
+
+Each operator class (Hash, Mask, Redact, Replace, Initial, etc.) implements the same Operator interface and defines an operate() method.
+
+The AnonymizerEngine does not need to know which specific operator it is using. It just:
+
+Looks up the operator by name via the factory.
+
+Instantiates it.
+
+Calls .operate() on it.
+
+Changing the anonymization behavior is just a matter of changing the operator name in the configuration (OperatorConfig), not changing engine code.
+
+Adding a new operator like Initial only requires:
+
+implementing the Initial class, and
+
+registering it in the factory’s dictionary.
+
+This is exactly the Strategy design pattern:
+
+the strategy = concrete operator class (Initial, Redact, etc.),
+
+the engine = context,
+
+the factory manages which strategy is used at runtime.
